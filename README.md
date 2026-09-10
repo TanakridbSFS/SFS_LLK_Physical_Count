@@ -157,7 +157,13 @@ PDA's scanner won't be exercised until you're testing on the real device.
   Counted Qty, skipping the UOM dropdown since that's chosen by hand, not
   scanned), matching how the Bin-scan field already uses Enter to jump
   straight into a bin — the PDA's auto-Enter-after-scan is put to use
-  everywhere it can be instead of just being swallowed. If the bin
+  everywhere it can be instead of just being swallowed. Some PDA barcodes
+  encode `SKU|Batch|Qty` in one scan instead of two separate SKU-only /
+  Batch-only barcodes — scanning one of those into either Mat or Batch
+  splits it and fills both fields at once (never Qty — that's still typed
+  in by hand from the actual count), then jumps straight to Counted Qty
+  instead of stopping at Batch. A plain single-value scan (no `|`) still
+  only fills whichever field it landed in, same as before. If the bin
   already has a CountRecord row from earlier *today*, it warns before
   letting you recount (there's no Session ID to scope this to anymore, so
   it's judged by date instead — see §6). On a bin's last page, "Save &

@@ -13,6 +13,19 @@ function masterUomFor(mat) {
   return MATERIAL_UOM[String(mat || "").trim()];
 }
 
+// Some PDA barcodes encode SKU|Batch|Qty in one scan (pipe-delimited,
+// always exactly 3 parts) instead of separate SKU-only / Batch-only
+// barcodes. When that's what just got scanned into Mat or Batch, split it
+// and fill both fields — but never the Qty part, that's still typed in by
+// hand from the actual count. Returns null if `raw` isn't that format.
+function parseComboScan(raw) {
+  const parts = String(raw).split("|");
+  if (parts.length !== 3) return null;
+  const [sku, batch] = parts;
+  if (!sku.trim() || !batch.trim()) return null;
+  return { mat: sku.trim(), batch: padBatch(batch.trim()) };
+}
+
 function emptyNewLine() {
   return {
     mat: "",
@@ -464,22 +477,33 @@ export default function CountBinPage() {
                   id={`newline-${nl._key}-mat`}
                   value={nl.mat}
                   onChange={(e) => {
-                    const mat = e.target.value;
+                    const raw = e.target.value;
+                    // A combo barcode (SKU|Batch|Qty) scanned into Mat fills
+                    // Batch too — but never Qty, that's still typed by hand.
+                    const combo = parseComboScan(raw);
+                    const mat = combo ? combo.mat : raw;
                     const match = masterUomFor(mat);
-                    // Fresh lookup on every keystroke — once the Mat code
-                    // matches something in Master_UOM, auto-fill its UOM
-                    // (unless the counter already chose to override it).
                     updateNewLine(idx, {
                       mat,
+                      ...(combo ? { batch: combo.batch } : {}),
+                      // Fresh lookup on every keystroke — once the Mat code
+                      // matches something in Master_UOM, auto-fill its UOM
+                      // (unless the counter already chose to override it).
                       ...(match && !nl.uomOverride ? { uom: match } : {}),
                     });
                   }}
                   onKeyDown={(e) => {
-                    // Scanner Enter after Mat → jump straight to Batch,
-                    // same "useful auto-advance" idea as the Bin scan field.
+                    // Scanner Enter after Mat → jump to Batch, same "useful
+                    // auto-advance" idea as the Bin scan field — unless this
+                    // was a combo scan (Batch already filled), then skip
+                    // straight to Counted Qty instead.
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      document.getElementById(`newline-${nl._key}-batch`)?.focus();
+                      const combo = parseComboScan(e.target.value);
+                      const nextId = combo
+                        ? `newline-${nl._key}-qty`
+                        : `newline-${nl._key}-batch`;
+                      document.getElementById(nextId)?.focus();
                     }
                   }}
                 />
@@ -489,7 +513,22 @@ export default function CountBinPage() {
                 <input
                   id={`newline-${nl._key}-batch`}
                   value={nl.batch}
-                  onChange={(e) => updateNewLine(idx, { batch: e.target.value })}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // In case a combo barcode ever lands in Batch instead of
+                    // Mat (wrong field focused) — same detection either way.
+                    const combo = parseComboScan(raw);
+                    if (combo) {
+                      const match = masterUomFor(combo.mat);
+                      updateNewLine(idx, {
+                        mat: combo.mat,
+                        batch: combo.batch,
+                        ...(match && !nl.uomOverride ? { uom: match } : {}),
+                      });
+                    } else {
+                      updateNewLine(idx, { batch: raw });
+                    }
+                  }}
                   onKeyDown={(e) => {
                     // Skip the UOM dropdown (manually chosen, not scanned) —
                     // go straight to Counted Qty.
