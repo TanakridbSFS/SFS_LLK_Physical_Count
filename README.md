@@ -131,7 +131,15 @@ PDA's scanner won't be exercised until you're testing on the real device.
   from BinMaster; existing lines keep BinMaster's UOM as-is). If the bin
   already has a CountRecord row from earlier *today*, it warns before
   letting you recount (there's no Session ID to scope this to anymore, so
-  it's judged by date instead — see §6).
+  it's judged by date instead — see §6). On a bin's last page, "Save &
+  Next Page" becomes **"Review & Finish Bin"** instead of saving right
+  away — it shows a summary of every line about to be written (Mat, Batch,
+  Expected vs. Counted, MATCH/ADJUSTED/ZERO/NEW) with a "ยืนยันและบันทึก"
+  (Confirm & Save) button to actually submit, or "กลับไปแก้ไข" (Back to
+  edit) to change something first. Nothing on that last page is saved
+  until confirmed there. (Earlier pages of a large, paginated bin still
+  save immediately on "Save & Next Page" — the summary step is only for
+  the final page, right before moving to the next bin.)
 - Every save appends rows to `CountRecord` — nothing is ever overwritten.
 
 ## 5. Admin Console (`/admin`)

@@ -27,6 +27,11 @@ export default function CountBinPage() {
   const [overrideRecount, setOverrideRecount] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Summary/confirm step shown before the final submit for this bin (last
+  // page) — nothing is sent to the sheet until confirmed here.
+  const [showSummary, setShowSummary] = useState(false);
+  const [pendingLines, setPendingLines] = useState([]);
+
   useEffect(() => {
     if (ready && !session) router.replace("/");
   }, [ready, session, router]);
@@ -97,10 +102,9 @@ export default function CountBinPage() {
     setNewLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function handleSave(goToNextBin) {
-    if (!data) return;
-    setError("");
-
+  // Builds + validates the list of lines that would be saved right now.
+  // Returns null (and sets the error banner) if something's not ready yet.
+  function buildLinesToSave() {
     const lines = [];
 
     for (const l of data.lines) {
@@ -109,12 +113,13 @@ export default function CountBinPage() {
       if (e.status === "unanswered") continue; // not answered yet — leave for later
       if (e.status === "wrong" && String(e.countedQty).trim() === "") {
         setError(`Please enter a quantity for ${l.Mat} (${l.Batch}), or use "Not Found" for 0.`);
-        return;
+        return null;
       }
       const countedQty = e.status === "correct" ? l.Qty : Number(e.countedQty);
       const lineType = e.status === "correct" ? "MATCH" : countedQty === 0 ? "ZERO" : "ADJUSTED";
       lines.push({
         mat: l.Mat,
+        matName: l.MatName,
         batch: l.Batch,
         uom: l.UOM,
         expectedQty: l.Qty,
@@ -127,10 +132,11 @@ export default function CountBinPage() {
       if (!nl.mat && !nl.batch && !nl.countedQty) continue; // skip totally blank rows
       if (String(nl.countedQty).trim() === "") {
         setError(`Please enter a quantity for the new line (Mat: ${nl.mat || "—"}).`);
-        return;
+        return null;
       }
       lines.push({
         mat: nl.mat,
+        matName: "",
         batch: nl.batch,
         uom: nl.uom,
         expectedQty: "",
@@ -141,10 +147,33 @@ export default function CountBinPage() {
 
     if (lines.length === 0) {
       setError("Nothing to save yet — answer at least one line (ถูก/ผิด) or add a new line.");
-      return;
+      return null;
     }
 
+    return lines;
+  }
+
+  // "Save & Next Page" — no bin summary needed yet, save this page right away.
+  function handleSaveAndNextPage() {
+    setError("");
+    const lines = buildLinesToSave();
+    if (!lines) return;
+    submitLines(lines, false);
+  }
+
+  // "Save & Next Bin" (last page) — show a summary of everything about to
+  // be written first; the actual save happens on "ยืนยันและบันทึก" below.
+  function handleReviewBeforeFinish() {
+    setError("");
+    const lines = buildLinesToSave();
+    if (!lines) return;
+    setPendingLines(lines);
+    setShowSummary(true);
+  }
+
+  async function submitLines(lines, goToNextBin) {
     setSaving(true);
+    setError("");
     try {
       const res = await fetch("/api/count", {
         method: "POST",
@@ -160,6 +189,8 @@ export default function CountBinPage() {
       if (!res.ok) throw new Error(json.error || "Failed to save");
 
       setNewLines([]);
+      setShowSummary(false);
+      setPendingLines([]);
 
       if (goToNextBin) {
         router.push("/scan");
@@ -199,7 +230,35 @@ export default function CountBinPage() {
         </div>
       )}
 
-      {!showRecountWarning && (
+      {!showRecountWarning && showSummary && (
+        <>
+          <div className="banner banner-info">
+            Summary for this bin — check before saving. Nothing is written yet.
+          </div>
+          {error && <div className="banner banner-warn">{error}</div>}
+
+          {pendingLines.map((l, idx) => (
+            <div className="card" key={`${l.mat}|${l.batch}|${l.uom}|${idx}`}>
+              <div className="card-row"><span>Mat</span><b>{l.mat}{l.matName ? ` — ${l.matName}` : ""}</b></div>
+              <div className="card-row"><span>Batch</span><b>{l.batch || "—"}</b></div>
+              <div className="card-row"><span>Expected</span><b>{l.expectedQty === "" ? "—" : `${l.expectedQty} ${l.uom}`}</b></div>
+              <div className="card-row"><span>Counted</span><b>{l.countedQty} {l.uom}</b></div>
+              <span className={`badge badge-${l.lineType.toLowerCase()}`}>{l.lineType}</span>
+            </div>
+          ))}
+
+          <div className="footer-actions">
+            <button className="btn btn-primary" disabled={saving} onClick={() => submitLines(pendingLines, true)}>
+              {saving ? "Saving…" : "ยืนยันและบันทึก (Confirm & Save)"}
+            </button>
+            <button className="btn btn-secondary" disabled={saving} onClick={() => setShowSummary(false)}>
+              กลับไปแก้ไข (Back to edit)
+            </button>
+          </div>
+        </>
+      )}
+
+      {!showRecountWarning && !showSummary && (
         <>
           {error && <div className="banner banner-warn">{error}</div>}
           {loading && <div>Loading…</div>}
@@ -325,12 +384,12 @@ export default function CountBinPage() {
 
           <div className="footer-actions">
             {data && data.page < data.totalPages ? (
-              <button className="btn btn-primary" disabled={saving} onClick={() => handleSave(false)}>
+              <button className="btn btn-primary" disabled={saving} onClick={handleSaveAndNextPage}>
                 {saving ? "Saving…" : "Save & Next Page"}
               </button>
             ) : (
-              <button className="btn btn-primary" disabled={saving} onClick={() => handleSave(true)}>
-                {saving ? "Saving…" : "Save & Next Bin"}
+              <button className="btn btn-primary" disabled={saving} onClick={handleReviewBeforeFinish}>
+                Review & Finish Bin
               </button>
             )}
             <button className="btn btn-secondary" onClick={() => router.push("/scan")}>
