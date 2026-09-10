@@ -125,7 +125,26 @@ PDA's scanner won't be exercised until you're testing on the real device.
   session, it warns before letting you recount.
 - Every save appends rows to `CountRecord` — nothing is ever overwritten.
 
-## 5. Known simplifications (see spec §7 for the reasoning)
+## 5. Admin Console (`/admin`)
+
+A small office-use page, separate from the PDA counting flow:
+
+- **Refresh Master Data Now** — the app normally re-reads the Master Ref
+  sheet at most once a minute (to stay within Google's API quota). If you
+  just edited `BinMaster` directly in the sheet and want the change to show
+  up immediately, this button forces that re-read right away and shows the
+  row count + timestamp of the refresh.
+- **Export Count Records** — downloads the raw `CountRecord` log as a CSV,
+  either for one Session ID or for everything ever counted.
+
+No passcode gate — by your call, since this only ever *reads* fresh data or
+*triggers a re-read*, it doesn't overwrite anything itself. (Editing
+`BinMaster`'s actual contents is still done directly in the Google Sheet, or
+via the conversion script in §1.1 — the console's "Refresh" button doesn't
+change what's in the sheet, just how soon the app notices.) If this page
+ever grows a feature that writes data, revisit that call.
+
+## 6. Known simplifications (see spec §7 for the reasoning)
 
 - Session/Round ID is entered by the counter, not centrally assigned —
   make sure everyone counting together agrees on the same ID before
