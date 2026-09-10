@@ -32,7 +32,16 @@ export default function StartPage() {
         <input
           value={counterName}
           onChange={(e) => setCounterName(e.target.value)}
+          onKeyDown={(e) => {
+            // Same as /scan — Enter (typed, or from a PDA that sends one
+            // after scanning/typing) should just go, not be swallowed.
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleStart();
+            }
+          }}
           placeholder="e.g. Somchai"
+          autoFocus
         />
       </div>
 
