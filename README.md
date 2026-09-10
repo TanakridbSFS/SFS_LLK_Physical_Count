@@ -37,6 +37,11 @@ the grouping itself, every time it fetches master data (see
   UOM) — this becomes the app's idea of "Bin", "Mat", "Batch", "UOM".
 - Sums `Total quantity` within each group, collapsing the `Inventory
   Status` split (UR/Block/QI) into one number, per your decision.
+- Pads `Batch` back out to a 10-digit text code (e.g. `9` → `0000000009`)
+  — Google Sheets' numeric read can silently drop the leading zeros from a
+  batch number, so this is re-applied on every read *and* every write
+  (`lib/binMasterConvert.js`'s `padBatch`), including batches typed by
+  hand on "+ Add New Line".
 
 To refresh for a new cycle-count round: just select the whole tab, delete
 it, and paste in a fresh export. Then hit "Refresh Master Data Now" on the

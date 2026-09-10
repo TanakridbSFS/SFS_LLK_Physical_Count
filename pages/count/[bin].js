@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "../../lib/useSession";
 import { UOM_OPTIONS } from "../../lib/uomOptions";
+import { padBatch } from "../../lib/binMasterConvert";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 500, 1000];
 
@@ -137,7 +138,7 @@ export default function CountBinPage() {
       lines.push({
         mat: nl.mat,
         matName: "",
-        batch: nl.batch,
+        batch: padBatch(nl.batch),
         uom: nl.uom,
         expectedQty: "",
         countedQty: Number(nl.countedQty),

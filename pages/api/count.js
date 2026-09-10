@@ -1,4 +1,5 @@
 import { appendCountRecords } from "../../lib/googleSheets";
+import { padBatch } from "../../lib/binMasterConvert";
 
 // POST /api/count
 // body: { counterName, bin, deviceId, lines: [{ mat, batch, uom, expectedQty, countedQty, lineType }] }
@@ -26,7 +27,10 @@ export default async function handler(req, res) {
     CounterName: counterName,
     Bin: bin,
     Mat: line.mat || "",
-    Batch: line.batch || "",
+    // Always a 10-digit text code — pad it here too, since a manually
+    // typed "+ Add New Line" batch (e.g. "9") should end up looking the
+    // same as one that came from BinMaster ("0000000009").
+    Batch: padBatch(line.batch),
     UOM: line.uom || "",
     ExpectedQty: line.expectedQty ?? "",
     CountedQty: line.countedQty ?? "",
