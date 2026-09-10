@@ -145,9 +145,14 @@ PDA's scanner won't be exercised until you're testing on the real device.
   logs a single `EMPTY` record for the bin (so "checked, nothing here" is
   captured properly, instead of forcing a fake New Line just to get past
   validation); "+ Add New Line" still works normally if stock actually
-  turns up there. Unexpected stock goes in via "+ Add New Line" (its UOM is
-  a dropdown — the 15 units in `lib/uomOptions.js` — since it's not coming
-  from BinMaster; existing lines keep BinMaster's UOM as-is). Its Mat/Batch
+  turns up there. Unexpected stock goes in via "+ Add New Line" — typing a
+  Mat code there auto-fills its UOM from `lib/materialUom.json` (bundled in
+  the repo, converted from your `Master_UOM.xlsx`) shown read-only with an
+  "Override" button, in case that's ever wrong; a Mat that isn't in that
+  list falls back to the manual dropdown (the 15 units in
+  `lib/uomOptions.js`) instead, same as before. See "Updating the
+  Material→UOM list" below for how to refresh it. Existing lines keep
+  BinMaster's UOM as-is, unaffected by any of this. Its Mat/Batch
   fields also treat Enter as "move to the next field" (Mat → Batch →
   Counted Qty, skipping the UOM dropdown since that's chosen by hand, not
   scanned), matching how the Bin-scan field already uses Enter to jump
@@ -165,6 +170,33 @@ PDA's scanner won't be exercised until you're testing on the real device.
   Page" — the summary step is only for the final page, right before moving
   to the next bin.)
 - Every save appends rows to `CountRecord` — nothing is ever overwritten.
+
+### 4.1 Updating the Material→UOM list
+
+`lib/materialUom.json` is a plain `{ "matCode": "UOM", ... }` map, generated
+once from your `Master_UOM.xlsx` (`Material` + `Base Unit of Measure`
+columns) — it's a static file in the repo, not read from Google Sheets, so
+it needs no extra env var and doesn't get re-checked on every request.
+
+Since this list only changes rarely, there's no in-app upload for it —
+just send an updated `Master_UOM.xlsx` and regenerate the JSON:
+
+```bash
+python3 -c "
+import openpyxl, json
+wb = openpyxl.load_workbook('Master_UOM.xlsx', data_only=True)
+ws = wb['Master_UOM']
+mapping = {
+    str(r[0]).strip(): str(r[2]).strip()
+    for r in ws.iter_rows(min_row=2, values_only=True) if r[0]
+}
+json.dump(mapping, open('lib/materialUom.json', 'w'), separators=(',', ':'), sort_keys=True)
+"
+```
+
+Then commit `lib/materialUom.json` and redeploy — same as any other code
+change. A Mat code missing from this file just falls back to the manual
+UOM dropdown, so it's safe if the list is a little out of date.
 
 ## 5. Admin Console (`/admin`)
 

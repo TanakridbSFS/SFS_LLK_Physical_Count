@@ -3,11 +3,27 @@ import { useRouter } from "next/router";
 import { useSession } from "../../lib/useSession";
 import { UOM_OPTIONS } from "../../lib/uomOptions";
 import { padBatch } from "../../lib/binMasterConvert";
+import MATERIAL_UOM from "../../lib/materialUom.json";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 500, 1000];
 
+// UOM for a Mat code, straight from the bundled Master_UOM list — undefined
+// if this Mat isn't in it (falls back to the manual dropdown in that case).
+function masterUomFor(mat) {
+  return MATERIAL_UOM[String(mat || "").trim()];
+}
+
 function emptyNewLine() {
-  return { mat: "", batch: "", uom: UOM_OPTIONS[0], countedQty: "", _key: Math.random().toString(36).slice(2) };
+  return {
+    mat: "",
+    batch: "",
+    uom: UOM_OPTIONS[0],
+    // true once the counter has explicitly chosen to override the
+    // Master-supplied UOM for this row (see masterUomFor above).
+    uomOverride: false,
+    countedQty: "",
+    _key: Math.random().toString(36).slice(2),
+  };
 }
 
 export default function CountBinPage() {
@@ -437,7 +453,9 @@ export default function CountBinPage() {
             );
           })}
 
-          {newLines.map((nl, idx) => (
+          {newLines.map((nl, idx) => {
+            const masterUom = masterUomFor(nl.mat);
+            return (
             <div className="card" key={nl._key}>
               <span className="badge badge-new">NEW</span>
               <div className="field" style={{ marginTop: 8 }}>
@@ -445,7 +463,17 @@ export default function CountBinPage() {
                 <input
                   id={`newline-${nl._key}-mat`}
                   value={nl.mat}
-                  onChange={(e) => updateNewLine(idx, { mat: e.target.value })}
+                  onChange={(e) => {
+                    const mat = e.target.value;
+                    const match = masterUomFor(mat);
+                    // Fresh lookup on every keystroke — once the Mat code
+                    // matches something in Master_UOM, auto-fill its UOM
+                    // (unless the counter already chose to override it).
+                    updateNewLine(idx, {
+                      mat,
+                      ...(match && !nl.uomOverride ? { uom: match } : {}),
+                    });
+                  }}
                   onKeyDown={(e) => {
                     // Scanner Enter after Mat → jump straight to Batch,
                     // same "useful auto-advance" idea as the Bin scan field.
@@ -474,11 +502,35 @@ export default function CountBinPage() {
               </div>
               <div className="field">
                 <label>UOM</label>
-                <select value={nl.uom} onChange={(e) => updateNewLine(idx, { uom: e.target.value })}>
-                  {UOM_OPTIONS.map((u) => (
-                    <option key={u} value={u}>{u}</option>
-                  ))}
-                </select>
+                {masterUom && !nl.uomOverride ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <b>{masterUom}</b>
+                    <span style={{ fontSize: 12, color: "#666" }}>(from Master)</span>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => updateNewLine(idx, { uomOverride: true })}
+                    >
+                      Override
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <select value={nl.uom} onChange={(e) => updateNewLine(idx, { uom: e.target.value })}>
+                      {UOM_OPTIONS.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                    {masterUom && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginTop: 6 }}
+                        onClick={() => updateNewLine(idx, { uomOverride: false, uom: masterUom })}
+                      >
+                        Use Master ({masterUom})
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
               <div className="field">
                 <label>Counted Qty</label>
@@ -502,7 +554,8 @@ export default function CountBinPage() {
                 Delete row
               </button>
             </div>
-          ))}
+            );
+          })}
 
           <button className="btn btn-secondary" onClick={() => setNewLines((prev) => [...prev, emptyNewLine()])}>
             + Add New Line
