@@ -129,11 +129,24 @@ PDA's scanner won't be exercised until you're testing on the real device.
   (paginated — 20/50/100/500/1000 per page, since some bins have 1,000+
   lines). Each line starts with two buttons: **✓ ถูก** (matches — no typing
   needed, saves the expected quantity as-is) or **✕ ผิด** (wrong — reveals a
-  quantity field; a "ไม่พบสินค้า (0)" shortcut fills in 0 for stock that
-  isn't there, since a wrong line always gets *some* number logged, never
-  just deleted). Unexpected stock goes in via "+ Add New Line" (its UOM is
-  a dropdown — the 15 units in `lib/uomOptions.js` — since it's not coming
-  from BinMaster; existing lines keep BinMaster's UOM as-is). If the bin
+  quantity field). After typing the actual quantity for a "ผิด" line, tap
+  **ปิด** (or just press Enter in the field — the PDA scanner's
+  auto-Enter does this for you) to close it into a short summary badge
+  (`ADJUSTED — 45 KG` / `ZERO — 0 KG`), with a "แก้ไข" button to reopen it
+  without retyping if you need to correct the number. A "ไม่พบสินค้า (0)"
+  shortcut closes the box immediately with 0 (since a wrong line always
+  gets *some* number logged, never just deleted, and 0 is already a
+  definitive answer — no need to tap "ปิด" separately). None of this is
+  sent to the sheet yet — it only updates the on-screen state, the same as
+  "ถูก" — the actual save still only happens at "Review & Finish Bin" /
+  "ยืนยันและบันทึก" below. Unexpected stock goes in via "+ Add New Line"
+  (its UOM is a dropdown — the 15 units in `lib/uomOptions.js` — since it's
+  not coming from BinMaster; existing lines keep BinMaster's UOM as-is).
+  Its Mat/Batch fields also treat Enter as "move to the next field" (Mat →
+  Batch → Counted Qty, skipping the UOM dropdown since that's chosen by
+  hand, not scanned), matching how the Bin-scan field already uses Enter to
+  jump straight into a bin — the PDA's auto-Enter-after-scan is put to use
+  everywhere it can be instead of just being swallowed. If the bin
   already has a CountRecord row from earlier *today*, it warns before
   letting you recount (there's no Session ID to scope this to anymore, so
   it's judged by date instead — see §6). On a bin's last page, "Save &

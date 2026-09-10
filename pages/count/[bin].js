@@ -88,7 +88,22 @@ export default function CountBinPage() {
   }
 
   function markNotFound(key) {
-    updateEdit(key, { status: "wrong", countedQty: "0" });
+    // 0 is already a definitive answer — close it right away, same as
+    // finishing a typed quantity.
+    updateEdit(key, { status: "wrong_closed", countedQty: "0" });
+  }
+
+  // Closes the box after typing an actual quantity for a "ผิด" line —
+  // summarizes it (like "ถูก" does) without submitting anything yet.
+  function closeWrong(key, countedQty) {
+    if (String(countedQty).trim() === "") return; // nothing to close yet
+    updateEdit(key, { status: "wrong_closed", countedQty });
+  }
+
+  // Reopens a closed "ผิด" line for editing — keeps the value that was
+  // there so it doesn't need retyping.
+  function reopenWrong(key) {
+    updateEdit(key, { status: "wrong" });
   }
 
   function undoAnswer(key) {
@@ -112,7 +127,14 @@ export default function CountBinPage() {
       const k = lineKey(l);
       const e = edits[k] || { status: "unanswered", countedQty: "" };
       if (e.status === "unanswered") continue; // not answered yet — leave for later
-      if (e.status === "wrong" && String(e.countedQty).trim() === "") {
+      if (e.status === "wrong") {
+        // Still open (not closed with "ปิด" yet) — not ready to save.
+        setError(`Please finish ${l.Mat} (${l.Batch}) — enter a quantity and tap "ปิด", or use "ไม่พบสินค้า (0)".`);
+        return null;
+      }
+      if (e.status === "wrong_closed" && String(e.countedQty).trim() === "") {
+        // Shouldn't happen (closeWrong/markNotFound only ever set this with
+        // a value), but guard anyway rather than silently falling through.
         setError(`Please enter a quantity for ${l.Mat} (${l.Batch}), or use "Not Found" for 0.`);
         return null;
       }
@@ -332,13 +354,36 @@ export default function CountBinPage() {
                         autoFocus
                         value={e.countedQty}
                         onChange={(ev) => updateEdit(k, { countedQty: ev.target.value })}
+                        onKeyDown={(ev) => {
+                          // PDA scanners send Enter after typing — make it do
+                          // the useful thing here: close this box, same as
+                          // tapping "ปิด".
+                          if (ev.key === "Enter") {
+                            ev.preventDefault();
+                            closeWrong(k, ev.target.value);
+                          }
+                        }}
                       />
                     </div>
+                    <button className="btn btn-primary btn-sm" onClick={() => closeWrong(k, e.countedQty)}>
+                      ปิด
+                    </button>
                     <button className="btn btn-warn btn-sm" onClick={() => markNotFound(k)}>
                       ไม่พบสินค้า (0)
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={() => undoAnswer(k)}>
                       ยกเลิก
+                    </button>
+                  </div>
+                )}
+
+                {e.status === "wrong_closed" && (
+                  <div style={{ marginTop: 10 }}>
+                    <span className={`badge badge-${Number(e.countedQty) === 0 ? "zero" : "adjusted"}`}>
+                      {Number(e.countedQty) === 0 ? "ZERO" : "ADJUSTED"} — {e.countedQty} {l.UOM}
+                    </span>{" "}
+                    <button className="btn btn-secondary btn-sm" onClick={() => reopenWrong(k)}>
+                      แก้ไข
                     </button>
                   </div>
                 )}
@@ -351,11 +396,35 @@ export default function CountBinPage() {
               <span className="badge badge-new">NEW</span>
               <div className="field" style={{ marginTop: 8 }}>
                 <label>Mat</label>
-                <input value={nl.mat} onChange={(e) => updateNewLine(idx, { mat: e.target.value })} />
+                <input
+                  id={`newline-${nl._key}-mat`}
+                  value={nl.mat}
+                  onChange={(e) => updateNewLine(idx, { mat: e.target.value })}
+                  onKeyDown={(e) => {
+                    // Scanner Enter after Mat → jump straight to Batch,
+                    // same "useful auto-advance" idea as the Bin scan field.
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      document.getElementById(`newline-${nl._key}-batch`)?.focus();
+                    }
+                  }}
+                />
               </div>
               <div className="field">
                 <label>Batch</label>
-                <input value={nl.batch} onChange={(e) => updateNewLine(idx, { batch: e.target.value })} />
+                <input
+                  id={`newline-${nl._key}-batch`}
+                  value={nl.batch}
+                  onChange={(e) => updateNewLine(idx, { batch: e.target.value })}
+                  onKeyDown={(e) => {
+                    // Skip the UOM dropdown (manually chosen, not scanned) —
+                    // go straight to Counted Qty.
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      document.getElementById(`newline-${nl._key}-qty`)?.focus();
+                    }
+                  }}
+                />
               </div>
               <div className="field">
                 <label>UOM</label>
@@ -368,9 +437,19 @@ export default function CountBinPage() {
               <div className="field">
                 <label>Counted Qty</label>
                 <input
+                  id={`newline-${nl._key}-qty`}
                   type="number"
                   value={nl.countedQty}
                   onChange={(e) => updateNewLine(idx, { countedQty: e.target.value })}
+                  onKeyDown={(e) => {
+                    // Finishing this row by Enter — just settle focus here
+                    // rather than doing anything surprising (adding another
+                    // row automatically wasn't explicitly requested).
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.target.blur();
+                    }
+                  }}
                 />
               </div>
               <button className="btn btn-secondary btn-sm" onClick={() => removeNewLine(idx)}>
