@@ -55,6 +55,8 @@ button {
 .btn-secondary { background: #e5e7eb; color: #111; }
 .btn-danger { background: #dc2626; color: white; }
 .btn-warn { background: #f59e0b; color: white; }
+.btn-correct { background: #16a34a; color: white; }
+.btn-wrong { background: #dc2626; color: white; }
 .btn-sm { padding: 8px 12px; font-size: 14px; width: auto; display: inline-block; margin-right: 8px; }
 
 .card {

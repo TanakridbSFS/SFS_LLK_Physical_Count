@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "../../lib/useSession";
+import { UOM_OPTIONS } from "../../lib/uomOptions";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 500, 1000];
 
 function emptyNewLine() {
-  return { mat: "", batch: "", uom: "", countedQty: "", _key: Math.random().toString(36).slice(2) };
+  return { mat: "", batch: "", uom: UOM_OPTIONS[0], countedQty: "", _key: Math.random().toString(36).slice(2) };
 }
 
 export default function CountBinPage() {
@@ -20,7 +21,8 @@ export default function CountBinPage() {
   const [error, setError] = useState("");
 
   // editable state for existing master lines, keyed by a stable id built from the line's fields
-  const [edits, setEdits] = useState({}); // key -> { countedQty, lineType, removed }
+  // status: 'unanswered' | 'correct' | 'wrong'
+  const [edits, setEdits] = useState({});
   const [newLines, setNewLines] = useState([]);
   const [overrideRecount, setOverrideRecount] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -37,7 +39,6 @@ export default function CountBinPage() {
     setError("");
     try {
       const params = new URLSearchParams({
-        sessionId: session.sessionId,
         page: String(page),
         pageSize: String(pageSize),
       });
@@ -51,7 +52,7 @@ export default function CountBinPage() {
         for (const l of json.lines) {
           const k = lineKey(l);
           if (!next[k]) {
-            next[k] = { countedQty: l.Qty, lineType: "MATCH", removed: false };
+            next[k] = { status: "unanswered", countedQty: "" };
           }
         }
         return next;
@@ -66,10 +67,26 @@ export default function CountBinPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bin, session?.sessionId, page, pageSize]);
+  }, [bin, session?.counterName, page, pageSize]);
 
   function updateEdit(key, patch) {
     setEdits((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }
+
+  function markCorrect(key) {
+    updateEdit(key, { status: "correct", countedQty: "" });
+  }
+
+  function markWrong(key) {
+    updateEdit(key, { status: "wrong", countedQty: "" });
+  }
+
+  function markNotFound(key) {
+    updateEdit(key, { status: "wrong", countedQty: "0" });
+  }
+
+  function undoAnswer(key) {
+    updateEdit(key, { status: "unanswered", countedQty: "" });
   }
 
   function updateNewLine(idx, patch) {
@@ -82,48 +99,57 @@ export default function CountBinPage() {
 
   async function handleSave(goToNextBin) {
     if (!data) return;
-    setSaving(true);
     setError("");
-    try {
-      const lines = [];
 
-      for (const l of data.lines) {
-        const k = lineKey(l);
-        const e = edits[k];
-        if (!e || e.removed) continue;
-        lines.push({
-          mat: l.Mat,
-          batch: l.Batch,
-          uom: l.UOM,
-          expectedQty: l.Qty,
-          countedQty: e.countedQty,
-          lineType: e.lineType,
-        });
-      }
+    const lines = [];
 
-      for (const nl of newLines) {
-        if (!nl.mat && !nl.batch && !nl.countedQty) continue; // skip totally blank rows
-        lines.push({
-          mat: nl.mat,
-          batch: nl.batch,
-          uom: nl.uom,
-          expectedQty: "",
-          countedQty: nl.countedQty,
-          lineType: "NEW",
-        });
-      }
-
-      if (lines.length === 0) {
-        setError("Nothing to save on this page.");
-        setSaving(false);
+    for (const l of data.lines) {
+      const k = lineKey(l);
+      const e = edits[k] || { status: "unanswered", countedQty: "" };
+      if (e.status === "unanswered") continue; // not answered yet — leave for later
+      if (e.status === "wrong" && String(e.countedQty).trim() === "") {
+        setError(`Please enter a quantity for ${l.Mat} (${l.Batch}), or use "Not Found" for 0.`);
         return;
       }
+      const countedQty = e.status === "correct" ? l.Qty : Number(e.countedQty);
+      const lineType = e.status === "correct" ? "MATCH" : countedQty === 0 ? "ZERO" : "ADJUSTED";
+      lines.push({
+        mat: l.Mat,
+        batch: l.Batch,
+        uom: l.UOM,
+        expectedQty: l.Qty,
+        countedQty,
+        lineType,
+      });
+    }
 
+    for (const nl of newLines) {
+      if (!nl.mat && !nl.batch && !nl.countedQty) continue; // skip totally blank rows
+      if (String(nl.countedQty).trim() === "") {
+        setError(`Please enter a quantity for the new line (Mat: ${nl.mat || "—"}).`);
+        return;
+      }
+      lines.push({
+        mat: nl.mat,
+        batch: nl.batch,
+        uom: nl.uom,
+        expectedQty: "",
+        countedQty: Number(nl.countedQty),
+        lineType: "NEW",
+      });
+    }
+
+    if (lines.length === 0) {
+      setError("Nothing to save yet — answer at least one line (ถูก/ผิด) or add a new line.");
+      return;
+    }
+
+    setSaving(true);
+    try {
       const res = await fetch("/api/count", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId: session.sessionId,
           counterName: session.counterName,
           deviceId: session.deviceId,
           bin,
@@ -155,13 +181,11 @@ export default function CountBinPage() {
   return (
     <div className="page">
       <div className="title">Bin: {bin}</div>
-      <div className="banner banner-info">
-        {session.counterName} · Session {session.sessionId}
-      </div>
+      <div className="banner banner-info">{session.counterName}</div>
 
       {showRecountWarning && (
         <div className="banner banner-warn">
-          This bin was already counted in this session
+          This bin was already counted today
           {alreadyCounted[0]?.CounterName ? ` by ${alreadyCounted[0].CounterName}` : ""}
           {alreadyCounted[0]?.Timestamp ? ` at ${alreadyCounted[0].Timestamp}` : ""}.
           <div style={{ marginTop: 8 }}>
@@ -209,8 +233,7 @@ export default function CountBinPage() {
 
           {data?.lines.map((l) => {
             const k = lineKey(l);
-            const e = edits[k] || { countedQty: l.Qty, lineType: "MATCH", removed: false };
-            if (e.removed) return null;
+            const e = edits[k] || { status: "unanswered", countedQty: "" };
             return (
               <div className="card" key={k}>
                 <div className="card-row"><span>Mat</span><b>{l.Mat} — {l.MatName}</b></div>
@@ -220,32 +243,45 @@ export default function CountBinPage() {
                   <div className="card-row"><span>Exp. Date</span><b>{l.ExpirationDate}</b></div>
                 )}
 
-                <div className="field" style={{ marginTop: 10, marginBottom: 8 }}>
-                  <label>Counted Qty ({l.UOM})</label>
-                  <input
-                    type="number"
-                    value={e.countedQty}
-                    onChange={(ev) => {
-                      const val = ev.target.value;
-                      const isMatch = Number(val) === Number(l.Qty);
-                      updateEdit(k, { countedQty: val, lineType: isMatch ? "MATCH" : "ADJUSTED" });
-                    }}
-                  />
-                </div>
+                {e.status === "unanswered" && (
+                  <div style={{ marginTop: 10 }}>
+                    <button className="btn btn-correct btn-sm" onClick={() => markCorrect(k)}>
+                      ✓ ถูก
+                    </button>
+                    <button className="btn btn-wrong btn-sm" onClick={() => markWrong(k)}>
+                      ✕ ผิด
+                    </button>
+                  </div>
+                )}
 
-                <span className={`badge badge-${e.lineType.toLowerCase()}`}>{e.lineType}</span>{" "}
-                <button
-                  className="btn btn-warn btn-sm"
-                  onClick={() => updateEdit(k, { countedQty: 0, lineType: "ZERO" })}
-                >
-                  Zero / Not Found
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => updateEdit(k, { removed: true })}
-                >
-                  Remove from this save
-                </button>
+                {e.status === "correct" && (
+                  <div style={{ marginTop: 10 }}>
+                    <span className="badge badge-match">MATCH — {l.Qty} {l.UOM}</span>{" "}
+                    <button className="btn btn-secondary btn-sm" onClick={() => undoAnswer(k)}>
+                      แก้ไข
+                    </button>
+                  </div>
+                )}
+
+                {e.status === "wrong" && (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label>Counted Qty ({l.UOM})</label>
+                      <input
+                        type="number"
+                        autoFocus
+                        value={e.countedQty}
+                        onChange={(ev) => updateEdit(k, { countedQty: ev.target.value })}
+                      />
+                    </div>
+                    <button className="btn btn-warn btn-sm" onClick={() => markNotFound(k)}>
+                      ไม่พบสินค้า (0)
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => undoAnswer(k)}>
+                      ยกเลิก
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -263,7 +299,11 @@ export default function CountBinPage() {
               </div>
               <div className="field">
                 <label>UOM</label>
-                <input value={nl.uom} onChange={(e) => updateNewLine(idx, { uom: e.target.value })} />
+                <select value={nl.uom} onChange={(e) => updateNewLine(idx, { uom: e.target.value })}>
+                  {UOM_OPTIONS.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
               </div>
               <div className="field">
                 <label>Counted Qty</label>

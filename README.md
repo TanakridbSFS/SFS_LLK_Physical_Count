@@ -50,15 +50,15 @@ now.)*
 ### 1.2 Record File — tab `CountRecord`
 
 Rename the tab to `CountRecord` (or set `RECORD_TAB` to match). Header row,
-columns A–K:
+columns A–J (no Session ID — removed per your request):
 
 ```
-Timestamp | SessionID | CounterName | Bin | Mat | Batch | UOM | ExpectedQty | CountedQty | LineType | DeviceID
+Timestamp | CounterName | Bin | Mat | Batch | UOM | ExpectedQty | CountedQty | LineType | DeviceID
 ```
 
 Leave the rest of the sheet empty — the app only ever **appends** rows
 here; it never edits or deletes existing ones. `LineType` will be one of
-`MATCH`, `ADJUSTED`, `NEW`, `ZERO` (see spec §2.2/§6).
+`MATCH`, `ADJUSTED`, `NEW`, `ZERO`.
 
 ### 1.3 Google Cloud service account (lets the app read/write both sheets)
 
@@ -114,17 +114,24 @@ PDA's scanner won't be exercised until you're testing on the real device.
 
 ## 4. How it works
 
-- **Start Session** (`/`) — counter types their name and a Session/Round
-  ID (no username/password login, per your requirement). Stored on-device
-  (`localStorage`) so it survives closing the browser.
+- **Start** (`/`) — counter types their name only (no username/password
+  login, and no Session/Round ID either — removed per your request).
+  Stored on-device (`localStorage`) so it survives closing the browser.
 - **Scan Bin** (`/scan`) — a text field stays focused; the PDA's built-in
   scanner types the Bin code into it and sends Enter automatically
-  (keyboard-wedge mode — no extra scanner setup needed, see spec §5).
+  (keyboard-wedge mode — no extra scanner setup needed).
 - **Confirm/Adjust** (`/count/[bin]`) — shows expected lines for that bin
   (paginated — 20/50/100/500/1000 per page, since some bins have 1,000+
-  lines), lets you accept, adjust, zero-out, add unexpected stock, or
-  remove a line from this save. If the bin was already counted this
-  session, it warns before letting you recount.
+  lines). Each line starts with two buttons: **✓ ถูก** (matches — no typing
+  needed, saves the expected quantity as-is) or **✕ ผิด** (wrong — reveals a
+  quantity field; a "ไม่พบสินค้า (0)" shortcut fills in 0 for stock that
+  isn't there, since a wrong line always gets *some* number logged, never
+  just deleted). Unexpected stock goes in via "+ Add New Line" (its UOM is
+  a dropdown — the 15 units in `lib/uomOptions.js` — since it's not coming
+  from BinMaster; existing lines keep BinMaster's UOM as-is). If the bin
+  already has a CountRecord row from earlier *today*, it warns before
+  letting you recount (there's no Session ID to scope this to anymore, so
+  it's judged by date instead — see §6).
 - Every save appends rows to `CountRecord` — nothing is ever overwritten.
 
 ## 5. Admin Console (`/admin`)
@@ -137,7 +144,8 @@ A small office-use page, separate from the PDA counting flow:
   up immediately, this button forces that re-read right away and shows the
   row count + timestamp of the refresh.
 - **Export Count Records** — downloads the raw `CountRecord` log as a CSV,
-  either for one Session ID or for everything ever counted.
+  either for one date or for everything ever counted (dates, not Session
+  IDs, since there's no Session ID anymore).
 
 No passcode gate — by your call, since this only ever *reads* fresh data or
 *triggers a re-read*, it doesn't overwrite anything itself. (Editing
@@ -146,18 +154,22 @@ via the conversion script in §1.1 — the console's "Refresh" button doesn't
 change what's in the sheet, just how soon the app notices.) If this page
 ever grows a feature that writes data, revisit that call.
 
-## 6. Known simplifications (see spec §7 for the reasoning)
+## 6. Known simplifications
 
-- Session/Round ID is entered by the counter, not centrally assigned —
-  make sure everyone counting together agrees on the same ID before
-  starting, and share the exact string (a WhatsApp/LINE message works).
-- The "already counted" check runs per Session ID + Bin — it does not
-  currently track partial progress within a large bin's pages (if
-  interrupted partway through a big bin's pages, page 1 will show as
-  "already counted" — resuming means paging forward, which is safe since
-  earlier pages just don't need re-saving).
+- No Session/Round ID anymore (removed per your request) — so "already
+  counted" is judged by **date**: if a Bin already has a CountRecord row
+  from earlier today, the app warns before letting anyone recount it that
+  same day. A different day (a later cycle-count round) counts it again
+  freely, no warning. Two PDAs both counting the same bin *today* is what
+  this catches; it doesn't distinguish rounds within the same day.
+- It also does not currently track partial progress within a large bin's
+  pages — if interrupted partway through a big bin, re-opening it later
+  today will show the "already counted today" warning (since a row exists
+  from page 1), and resuming means overriding and paging forward, which is
+  safe since earlier pages just don't need re-saving.
 - No variance/reconciliation report is built (per your earlier answer) —
   `CountRecord` is the raw log; analysis happens outside the app.
 - Expected quantities are read live from `BinMaster` on every scan, cached
   for 1 minute per server instance — if you edit `BinMaster` mid-session,
-  changes show up within a minute.
+  changes show up within a minute (or immediately via the admin console's
+  "Refresh Master Data Now").

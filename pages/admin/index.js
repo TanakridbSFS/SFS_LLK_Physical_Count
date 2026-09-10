@@ -6,9 +6,9 @@ export default function AdminConsole() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
 
-  const [sessions, setSessions] = useState([]);
-  const [selectedSession, setSelectedSession] = useState("ALL");
-  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [dates, setDates] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("ALL");
+  const [loadingDates, setLoadingDates] = useState(false);
 
   async function loadMasterStatus() {
     try {
@@ -20,22 +20,22 @@ export default function AdminConsole() {
     }
   }
 
-  async function loadSessions(forceRefresh) {
-    setLoadingSessions(true);
+  async function loadDates(forceRefresh) {
+    setLoadingDates(true);
     try {
-      const res = await fetch(`/api/admin/sessions${forceRefresh ? "?forceRefresh=1" : ""}`);
+      const res = await fetch(`/api/admin/dates${forceRefresh ? "?forceRefresh=1" : ""}`);
       const json = await res.json();
-      setSessions(json.sessions || []);
+      setDates(json.dates || []);
     } catch {
       // non-fatal
     } finally {
-      setLoadingSessions(false);
+      setLoadingDates(false);
     }
   }
 
   useEffect(() => {
     loadMasterStatus();
-    loadSessions(false);
+    loadDates(false);
   }, []);
 
   async function handleRefreshMaster() {
@@ -55,7 +55,7 @@ export default function AdminConsole() {
   }
 
   function handleExport() {
-    const params = new URLSearchParams({ sessionId: selectedSession });
+    const params = new URLSearchParams({ date: selectedDate });
     window.location.href = `/api/admin/export?${params}`;
   }
 
@@ -92,24 +92,25 @@ export default function AdminConsole() {
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Export Count Records</div>
         <div style={{ fontSize: 14, color: "#555", marginBottom: 10 }}>
           Downloads the raw CountRecord log as a CSV file — every MATCH /
-          ADJUSTED / NEW / ZERO line ever saved, for the session you pick (or
-          everything).
+          ADJUSTED / NEW / ZERO line ever saved, for the date you pick (or
+          everything). There's no Session ID anymore, so this filters by the
+          date each row was saved instead.
         </div>
 
         <div className="field">
-          <label>Session</label>
-          <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)}>
-            <option value="ALL">All sessions</option>
-            {sessions.map((s) => (
-              <option key={s.sessionId} value={s.sessionId}>
-                {s.sessionId} ({s.rowCount} rows{s.lastTimestamp ? `, last ${new Date(s.lastTimestamp).toLocaleString()}` : ""})
+          <label>Date</label>
+          <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}>
+            <option value="ALL">All dates</option>
+            {dates.map((d) => (
+              <option key={d.date} value={d.date}>
+                {d.date} ({d.rowCount} rows)
               </option>
             ))}
           </select>
         </div>
 
-        <button className="btn btn-secondary btn-sm" disabled={loadingSessions} onClick={() => loadSessions(true)}>
-          {loadingSessions ? "Loading…" : "Refresh session list"}
+        <button className="btn btn-secondary btn-sm" disabled={loadingDates} onClick={() => loadDates(true)}>
+          {loadingDates ? "Loading…" : "Refresh date list"}
         </button>
         <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={handleExport}>
           Download CSV

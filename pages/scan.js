@@ -38,9 +38,7 @@ export default function ScanPage() {
     <div className="page">
       <div className="title">Scan Bin</div>
 
-      <div className="banner banner-info">
-        {session.counterName} · Session {session.sessionId}
-      </div>
+      <div className="banner banner-info">{session.counterName}</div>
 
       <div className="field">
         <label>Bin Location</label>
@@ -59,7 +57,7 @@ export default function ScanPage() {
         Go
       </button>
       <button className="btn btn-secondary" onClick={() => router.push("/")}>
-        Change Session / Counter
+        Change Counter
       </button>
     </div>
   );
