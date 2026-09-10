@@ -85,6 +85,7 @@ button {
 .badge-adjusted { background: #fef3c7; color: #92400e; }
 .badge-new { background: #dbeafe; color: #1e40af; }
 .badge-zero { background: #fee2e2; color: #991b1b; }
+.badge-empty { background: #e0e7ff; color: #3730a3; }
 
 .banner {
   padding: 12px;

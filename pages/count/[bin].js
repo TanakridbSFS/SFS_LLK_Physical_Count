@@ -28,6 +28,10 @@ export default function CountBinPage() {
   const [overrideRecount, setOverrideRecount] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // For a bin with no expected items in Master data — lets the counter
+  // confirm "checked, nothing here" without having to fake a New Line.
+  const [confirmedEmpty, setConfirmedEmpty] = useState(false);
+
   // Summary/confirm step shown before the final submit for this bin (last
   // page) — nothing is sent to the sheet until confirmed here.
   const [showSummary, setShowSummary] = useState(false);
@@ -128,14 +132,14 @@ export default function CountBinPage() {
       const e = edits[k] || { status: "unanswered", countedQty: "" };
       if (e.status === "unanswered") continue; // not answered yet — leave for later
       if (e.status === "wrong") {
-        // Still open (not closed with "ปิด" yet) — not ready to save.
-        setError(`Please finish ${l.Mat} (${l.Batch}) — enter a quantity and tap "ปิด", or use "ไม่พบสินค้า (0)".`);
+        // Still open (not closed with "Confirm" yet) — not ready to save.
+        setError(`Please finish ${l.Mat} (${l.Batch}) — enter a quantity and tap "Confirm", or use "No Product".`);
         return null;
       }
       if (e.status === "wrong_closed" && String(e.countedQty).trim() === "") {
         // Shouldn't happen (closeWrong/markNotFound only ever set this with
         // a value), but guard anyway rather than silently falling through.
-        setError(`Please enter a quantity for ${l.Mat} (${l.Batch}), or use "Not Found" for 0.`);
+        setError(`Please enter a quantity for ${l.Mat} (${l.Batch}), or use "No Product" for 0.`);
         return null;
       }
       const countedQty = e.status === "correct" ? l.Qty : Number(e.countedQty);
@@ -168,8 +172,26 @@ export default function CountBinPage() {
       });
     }
 
+    // Bin has no expected items and the counter confirmed there's nothing
+    // here — log that as its own record instead of forcing a fake "New Line".
+    if (data.knownBin === false && confirmedEmpty) {
+      lines.push({
+        mat: "",
+        matName: "",
+        batch: "",
+        uom: "",
+        expectedQty: "",
+        countedQty: 0,
+        lineType: "EMPTY",
+      });
+    }
+
     if (lines.length === 0) {
-      setError("Nothing to save yet — answer at least one line (ถูก/ผิด) or add a new line.");
+      setError(
+        data.knownBin === false
+          ? "Nothing to save yet — tap \"Confirm — Nothing Found\" or add a new line."
+          : "Nothing to save yet — answer at least one line (Correct/Wrong) or add a new line."
+      );
       return null;
     }
 
@@ -214,6 +236,7 @@ export default function CountBinPage() {
       setNewLines([]);
       setShowSummary(false);
       setPendingLines([]);
+      setConfirmedEmpty(false);
 
       if (goToNextBin) {
         router.push("/scan");
@@ -262,20 +285,26 @@ export default function CountBinPage() {
 
           {pendingLines.map((l, idx) => (
             <div className="card" key={`${l.mat}|${l.batch}|${l.uom}|${idx}`}>
-              <div className="card-row"><span>Mat</span><b>{l.mat}{l.matName ? ` — ${l.matName}` : ""}</b></div>
-              <div className="card-row"><span>Batch</span><b>{l.batch || "—"}</b></div>
-              <div className="card-row"><span>Expected</span><b>{l.expectedQty === "" ? "—" : `${l.expectedQty} ${l.uom}`}</b></div>
-              <div className="card-row"><span>Counted</span><b>{l.countedQty} {l.uom}</b></div>
+              {l.lineType === "EMPTY" ? (
+                <div className="card-row"><span>Bin confirmed</span><b>Nothing found</b></div>
+              ) : (
+                <>
+                  <div className="card-row"><span>Mat</span><b>{l.mat}{l.matName ? ` — ${l.matName}` : ""}</b></div>
+                  <div className="card-row"><span>Batch</span><b>{l.batch || "—"}</b></div>
+                  <div className="card-row"><span>Expected</span><b>{l.expectedQty === "" ? "—" : `${l.expectedQty} ${l.uom}`}</b></div>
+                  <div className="card-row"><span>Counted</span><b>{l.countedQty} {l.uom}</b></div>
+                </>
+              )}
               <span className={`badge badge-${l.lineType.toLowerCase()}`}>{l.lineType}</span>
             </div>
           ))}
 
           <div className="footer-actions">
             <button className="btn btn-primary" disabled={saving} onClick={() => submitLines(pendingLines, true)}>
-              {saving ? "Saving…" : "ยืนยันและบันทึก (Confirm & Save)"}
+              {saving ? "Saving…" : "Confirm & Save"}
             </button>
             <button className="btn btn-secondary" disabled={saving} onClick={() => setShowSummary(false)}>
-              กลับไปแก้ไข (Back to edit)
+              Back to Edit
             </button>
           </div>
         </>
@@ -287,8 +316,25 @@ export default function CountBinPage() {
           {loading && <div>Loading…</div>}
 
           {data && !data.knownBin && (
-            <div className="banner banner-warn">
-              This bin has no expected items in the master data. You can still log what you find below using "+ Add New Line".
+            <div className="card">
+              <div className="banner banner-warn" style={{ marginBottom: 10 }}>
+                This bin has no expected items in the master data.
+              </div>
+              {!confirmedEmpty ? (
+                <button className="btn btn-correct btn-sm" onClick={() => setConfirmedEmpty(true)}>
+                  ✓ Confirm — Nothing Found
+                </button>
+              ) : (
+                <div>
+                  <span className="badge badge-zero">CONFIRMED — Nothing Found</span>{" "}
+                  <button className="btn btn-secondary btn-sm" onClick={() => setConfirmedEmpty(false)}>
+                    Edit
+                  </button>
+                </div>
+              )}
+              <div style={{ fontSize: 13, color: "#666", marginTop: 8 }}>
+                Found stock anyway? Use "+ Add New Line" below instead.
+              </div>
             </div>
           )}
 
@@ -328,10 +374,10 @@ export default function CountBinPage() {
                 {e.status === "unanswered" && (
                   <div style={{ marginTop: 10 }}>
                     <button className="btn btn-correct btn-sm" onClick={() => markCorrect(k)}>
-                      ✓ ถูก
+                      ✓ Correct
                     </button>
                     <button className="btn btn-wrong btn-sm" onClick={() => markWrong(k)}>
-                      ✕ ผิด
+                      ✕ Wrong
                     </button>
                   </div>
                 )}
@@ -340,7 +386,7 @@ export default function CountBinPage() {
                   <div style={{ marginTop: 10 }}>
                     <span className="badge badge-match">MATCH — {l.Qty} {l.UOM}</span>{" "}
                     <button className="btn btn-secondary btn-sm" onClick={() => undoAnswer(k)}>
-                      แก้ไข
+                      Edit
                     </button>
                   </div>
                 )}
@@ -357,7 +403,7 @@ export default function CountBinPage() {
                         onKeyDown={(ev) => {
                           // PDA scanners send Enter after typing — make it do
                           // the useful thing here: close this box, same as
-                          // tapping "ปิด".
+                          // tapping "Confirm".
                           if (ev.key === "Enter") {
                             ev.preventDefault();
                             closeWrong(k, ev.target.value);
@@ -366,13 +412,13 @@ export default function CountBinPage() {
                       />
                     </div>
                     <button className="btn btn-primary btn-sm" onClick={() => closeWrong(k, e.countedQty)}>
-                      ปิด
+                      Confirm
                     </button>
                     <button className="btn btn-warn btn-sm" onClick={() => markNotFound(k)}>
-                      ไม่พบสินค้า (0)
+                      No Product
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={() => undoAnswer(k)}>
-                      ยกเลิก
+                      Cancel
                     </button>
                   </div>
                 )}
@@ -383,7 +429,7 @@ export default function CountBinPage() {
                       {Number(e.countedQty) === 0 ? "ZERO" : "ADJUSTED"} — {e.countedQty} {l.UOM}
                     </span>{" "}
                     <button className="btn btn-secondary btn-sm" onClick={() => reopenWrong(k)}>
-                      แก้ไข
+                      Edit
                     </button>
                   </div>
                 )}

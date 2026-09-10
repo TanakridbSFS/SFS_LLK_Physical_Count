@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing counterName, bin, or lines" });
   }
 
-  const validTypes = new Set(["MATCH", "ADJUSTED", "NEW", "ZERO"]);
+  const validTypes = new Set(["MATCH", "ADJUSTED", "NEW", "ZERO", "EMPTY"]);
   for (const line of lines) {
     if (!validTypes.has(line.lineType)) {
       return res.status(400).json({ error: `Invalid lineType: ${line.lineType}` });

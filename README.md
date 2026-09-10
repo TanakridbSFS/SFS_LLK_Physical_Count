@@ -63,7 +63,8 @@ Timestamp | CounterName | Bin | Mat | Batch | UOM | ExpectedQty | CountedQty | L
 
 Leave the rest of the sheet empty — the app only ever **appends** rows
 here; it never edits or deletes existing ones. `LineType` will be one of
-`MATCH`, `ADJUSTED`, `NEW`, `ZERO`.
+`MATCH`, `ADJUSTED`, `NEW`, `ZERO`, or `EMPTY` (bin had no expected items
+and was confirmed as "nothing found" — no Mat/Batch/UOM on that row).
 
 ### 1.3 Google Cloud service account (lets the app read/write both sheets)
 
@@ -127,37 +128,42 @@ PDA's scanner won't be exercised until you're testing on the real device.
   (keyboard-wedge mode — no extra scanner setup needed).
 - **Confirm/Adjust** (`/count/[bin]`) — shows expected lines for that bin
   (paginated — 20/50/100/500/1000 per page, since some bins have 1,000+
-  lines). Each line starts with two buttons: **✓ ถูก** (matches — no typing
-  needed, saves the expected quantity as-is) or **✕ ผิด** (wrong — reveals a
-  quantity field). After typing the actual quantity for a "ผิด" line, tap
-  **ปิด** (or just press Enter in the field — the PDA scanner's
+  lines). Each line starts with two buttons: **✓ Correct** (matches — no
+  typing needed, saves the expected quantity as-is) or **✕ Wrong** (reveals a
+  quantity field). After typing the actual quantity for a "Wrong" line, tap
+  **Confirm** (or just press Enter in the field — the PDA scanner's
   auto-Enter does this for you) to close it into a short summary badge
-  (`ADJUSTED — 45 KG` / `ZERO — 0 KG`), with a "แก้ไข" button to reopen it
-  without retyping if you need to correct the number. A "ไม่พบสินค้า (0)"
+  (`ADJUSTED — 45 KG` / `ZERO — 0 KG`), with an "Edit" button to reopen it
+  without retyping if you need to correct the number. A "No Product"
   shortcut closes the box immediately with 0 (since a wrong line always
   gets *some* number logged, never just deleted, and 0 is already a
-  definitive answer — no need to tap "ปิด" separately). None of this is
+  definitive answer — no need to tap "Confirm" separately). None of this is
   sent to the sheet yet — it only updates the on-screen state, the same as
-  "ถูก" — the actual save still only happens at "Review & Finish Bin" /
-  "ยืนยันและบันทึก" below. Unexpected stock goes in via "+ Add New Line"
-  (its UOM is a dropdown — the 15 units in `lib/uomOptions.js` — since it's
-  not coming from BinMaster; existing lines keep BinMaster's UOM as-is).
-  Its Mat/Batch fields also treat Enter as "move to the next field" (Mat →
-  Batch → Counted Qty, skipping the UOM dropdown since that's chosen by
-  hand, not scanned), matching how the Bin-scan field already uses Enter to
-  jump straight into a bin — the PDA's auto-Enter-after-scan is put to use
+  "Correct" — the actual save still only happens at "Review & Finish Bin" /
+  "Confirm & Save" below. If the bin has **no expected items at all** in
+  Master data, it shows a "✓ Confirm — Nothing Found" button instead —
+  logs a single `EMPTY` record for the bin (so "checked, nothing here" is
+  captured properly, instead of forcing a fake New Line just to get past
+  validation); "+ Add New Line" still works normally if stock actually
+  turns up there. Unexpected stock goes in via "+ Add New Line" (its UOM is
+  a dropdown — the 15 units in `lib/uomOptions.js` — since it's not coming
+  from BinMaster; existing lines keep BinMaster's UOM as-is). Its Mat/Batch
+  fields also treat Enter as "move to the next field" (Mat → Batch →
+  Counted Qty, skipping the UOM dropdown since that's chosen by hand, not
+  scanned), matching how the Bin-scan field already uses Enter to jump
+  straight into a bin — the PDA's auto-Enter-after-scan is put to use
   everywhere it can be instead of just being swallowed. If the bin
   already has a CountRecord row from earlier *today*, it warns before
   letting you recount (there's no Session ID to scope this to anymore, so
   it's judged by date instead — see §6). On a bin's last page, "Save &
   Next Page" becomes **"Review & Finish Bin"** instead of saving right
   away — it shows a summary of every line about to be written (Mat, Batch,
-  Expected vs. Counted, MATCH/ADJUSTED/ZERO/NEW) with a "ยืนยันและบันทึก"
-  (Confirm & Save) button to actually submit, or "กลับไปแก้ไข" (Back to
-  edit) to change something first. Nothing on that last page is saved
-  until confirmed there. (Earlier pages of a large, paginated bin still
-  save immediately on "Save & Next Page" — the summary step is only for
-  the final page, right before moving to the next bin.)
+  Expected vs. Counted, MATCH/ADJUSTED/ZERO/NEW/EMPTY) with a "Confirm &
+  Save" button to actually submit, or "Back to Edit" to change something
+  first. Nothing on that last page is saved until confirmed there. (Earlier
+  pages of a large, paginated bin still save immediately on "Save & Next
+  Page" — the summary step is only for the final page, right before moving
+  to the next bin.)
 - Every save appends rows to `CountRecord` — nothing is ever overwritten.
 
 ## 5. Admin Console (`/admin`)
