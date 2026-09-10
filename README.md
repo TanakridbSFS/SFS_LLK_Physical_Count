@@ -21,29 +21,31 @@ You have two sheets already:
 Rename the tab (bottom of the sheet) to `BinMaster`, or leave it as-is and
 set `MASTER_TAB` in your `.env` to match its actual name.
 
-Header row (row 1), columns A–H:
+**Paste the raw WMS export straight in** — copy the entire contents of a
+`PHYSICAL_INVENTORY_EXPORT_*.xlsx` file (header row and all, all 16
+columns A–P: Owner, Owner Code, SKU Code, SKU Name, Inventory Status, ERP
+Batch Number, Total quantity, Occupied Qty., Available Qty., Basic UOM,
+Warehouse area code, Location Type, Container Code, Bin-location Code,
+Manufacturing Date, Expiration Date) into this tab, starting at cell A1. No
+conversion step needed — the app reads this raw shape directly and does
+the grouping itself, every time it fetches master data (see
+`lib/binMasterConvert.js`):
 
-```
-Bin | Mat | MatName | Batch | Qty | UOM | ExpirationDate | WarehouseArea
-```
+- Drops `Location Type = CONTAINER` rows (`Container Code` always
+  `PICK_CONTAINER` — a picking tote, not a real bin).
+- Groups the rest by (Container Code, SKU Code, ERP Batch Number, Basic
+  UOM) — this becomes the app's idea of "Bin", "Mat", "Batch", "UOM".
+- Sums `Total quantity` within each group, collapsing the `Inventory
+  Status` split (UR/Block/QI) into one number, per your decision.
 
-This is **not** the raw WMS export format — it's a cleaned-up, one-row-per-
-Bin/Mat/Batch/UOM shape. To fill it from a raw
-`PHYSICAL_INVENTORY_EXPORT_*.xlsx` file:
+To refresh for a new cycle-count round: just select the whole tab, delete
+it, and paste in a fresh export. Then hit "Refresh Master Data Now" on the
+admin console (§5) if you don't want to wait for the 1-minute cache.
 
-```bash
-pip install openpyxl --break-system-packages
-python3 tools/convert_export_to_binmaster.py PHYSICAL_INVENTORY_EXPORT_20260909190532.xlsx BinMaster.csv
-```
-
-This script drops `CONTAINER`/`PICK_CONTAINER` rows, groups by
-(Bin, SKU, Batch, UOM), and sums quantity across `Inventory Status`
-(UR/Block/QI collapsed into one number, per your earlier decision). Open
-the resulting `BinMaster.csv` and paste its rows into the `BinMaster` tab
-below the header (File → Import in Google Sheets, "Replace data at
-selected cell", works well for this).
-
-Re-run this whenever you pull a fresh export for a new cycle-count round.
+*(There's also `tools/convert_export_to_binmaster.py` in this repo, which
+does the same grouping as a standalone script — useful if you ever want to
+eyeball the converted result locally, but the app itself doesn't need it
+now.)*
 
 ### 1.2 Record File — tab `CountRecord`
 
