@@ -65,6 +65,10 @@ Leave the rest of the sheet empty — the app only ever **appends** rows
 here; it never edits or deletes existing ones. `LineType` will be one of
 `MATCH`, `ADJUSTED`, `NEW`, `ZERO`, or `EMPTY` (bin had no expected items
 and was confirmed as "nothing found" — no Mat/Batch/UOM on that row).
+`Timestamp` is written in **Thai local time** (UTC+7, e.g.
+`2026-09-11T09:47:23+07:00`), not server UTC — see `lib/time.js`; the
+"already counted today" check (§6) uses the same Thai calendar day, so the
+two stay consistent.
 
 ### 1.3 Google Cloud service account (lets the app read/write both sheets)
 
@@ -128,7 +132,10 @@ PDA's scanner won't be exercised until you're testing on the real device.
   (keyboard-wedge mode — no extra scanner setup needed).
 - **Confirm/Adjust** (`/count/[bin]`) — shows expected lines for that bin
   (paginated — 20/50/100/500/1000 per page, since some bins have 1,000+
-  lines). Each line starts with two buttons: **✓ Correct** (matches — no
+  lines). Wherever a UOM of **`KG`** is shown on this screen it's
+  highlighted in yellow — it's the easiest unit to miscount by hand on a
+  scale reading, so it's meant to catch the eye while scanning. Each line
+  starts with two buttons: **✓ Correct** (matches — no
   typing needed, saves the expected quantity as-is) or **✕ Wrong** (reveals a
   quantity field). After typing the actual quantity for a "Wrong" line, tap
   **Confirm** (or just press Enter in the field — the PDA scanner's

@@ -1,5 +1,6 @@
 import { appendCountRecords } from "../../lib/googleSheets";
 import { padBatch } from "../../lib/binMasterConvert";
+import { nowThailandISOString } from "../../lib/time";
 
 // POST /api/count
 // body: { counterName, bin, deviceId, lines: [{ mat, batch, uom, expectedQty, countedQty, lineType }] }
@@ -21,7 +22,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const timestamp = new Date().toISOString();
+  const timestamp = nowThailandISOString();
   const rows = lines.map((line) => ({
     Timestamp: timestamp,
     CounterName: counterName,

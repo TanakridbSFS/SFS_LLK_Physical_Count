@@ -26,6 +26,16 @@ function parseComboScan(raw) {
   return { mat: sku.trim(), batch: padBatch(batch.trim()) };
 }
 
+// KG is the most error-prone unit to miscount by hand (small mistakes are
+// easy to miss on a scale reading) — highlight it wherever a UOM is shown
+// on the Confirm/Adjust screen so it stands out at a glance while scanning.
+function UomText({ uom }) {
+  if (uom === "KG") {
+    return <mark className="uom-kg">{uom}</mark>;
+  }
+  return uom;
+}
+
 function emptyNewLine() {
   return {
     mat: "",
@@ -320,8 +330,8 @@ export default function CountBinPage() {
                 <>
                   <div className="card-row"><span>Mat</span><b>{l.mat}{l.matName ? ` — ${l.matName}` : ""}</b></div>
                   <div className="card-row"><span>Batch</span><b>{l.batch || "—"}</b></div>
-                  <div className="card-row"><span>Expected</span><b>{l.expectedQty === "" ? "—" : `${l.expectedQty} ${l.uom}`}</b></div>
-                  <div className="card-row"><span>Counted</span><b>{l.countedQty} {l.uom}</b></div>
+                  <div className="card-row"><span>Expected</span><b>{l.expectedQty === "" ? "—" : <>{l.expectedQty} <UomText uom={l.uom} /></>}</b></div>
+                  <div className="card-row"><span>Counted</span><b>{l.countedQty} <UomText uom={l.uom} /></b></div>
                 </>
               )}
               <span className={`badge badge-${l.lineType.toLowerCase()}`}>{l.lineType}</span>
@@ -395,7 +405,7 @@ export default function CountBinPage() {
               <div className="card" key={k}>
                 <div className="card-row"><span>Mat</span><b>{l.Mat} — {l.MatName}</b></div>
                 <div className="card-row"><span>Batch</span><b>{l.Batch}</b></div>
-                <div className="card-row"><span>Expected Qty</span><b>{l.Qty} {l.UOM}</b></div>
+                <div className="card-row"><span>Expected Qty</span><b>{l.Qty} <UomText uom={l.UOM} /></b></div>
                 {l.ExpirationDate && (
                   <div className="card-row"><span>Exp. Date</span><b>{l.ExpirationDate}</b></div>
                 )}
@@ -413,7 +423,7 @@ export default function CountBinPage() {
 
                 {e.status === "correct" && (
                   <div style={{ marginTop: 10 }}>
-                    <span className="badge badge-match">MATCH — {l.Qty} {l.UOM}</span>{" "}
+                    <span className="badge badge-match">MATCH — {l.Qty} <UomText uom={l.UOM} /></span>{" "}
                     <button className="btn btn-secondary btn-sm" onClick={() => undoAnswer(k)}>
                       Edit
                     </button>
@@ -423,7 +433,7 @@ export default function CountBinPage() {
                 {e.status === "wrong" && (
                   <div style={{ marginTop: 10 }}>
                     <div className="field" style={{ marginBottom: 8 }}>
-                      <label>Counted Qty ({l.UOM})</label>
+                      <label>Counted Qty (<UomText uom={l.UOM} />)</label>
                       <input
                         type="number"
                         autoFocus
@@ -455,7 +465,7 @@ export default function CountBinPage() {
                 {e.status === "wrong_closed" && (
                   <div style={{ marginTop: 10 }}>
                     <span className={`badge badge-${Number(e.countedQty) === 0 ? "zero" : "adjusted"}`}>
-                      {Number(e.countedQty) === 0 ? "ZERO" : "ADJUSTED"} — {e.countedQty} {l.UOM}
+                      {Number(e.countedQty) === 0 ? "ZERO" : "ADJUSTED"} — {e.countedQty} <UomText uom={l.UOM} />
                     </span>{" "}
                     <button className="btn btn-secondary btn-sm" onClick={() => reopenWrong(k)}>
                       Edit
@@ -543,7 +553,7 @@ export default function CountBinPage() {
                 <label>UOM</label>
                 {masterUom && !nl.uomOverride ? (
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <b>{masterUom}</b>
+                    <b><UomText uom={masterUom} /></b>
                     <span style={{ fontSize: 12, color: "#666" }}>(from Master)</span>
                     <button
                       className="btn btn-secondary btn-sm"

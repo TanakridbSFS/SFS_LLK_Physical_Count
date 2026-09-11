@@ -87,6 +87,16 @@ button {
 .badge-zero { background: #fee2e2; color: #991b1b; }
 .badge-empty { background: #e0e7ff; color: #3730a3; }
 
+/* KG is the easiest unit to miscount by hand — call it out everywhere a
+   UOM is shown on the Confirm/Adjust screen. */
+.uom-kg {
+  background: #fde047;
+  color: #713f12;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
 .banner {
   padding: 12px;
   border-radius: 10px;
