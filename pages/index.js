@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { useSession } from "../lib/useSession";
 
 export default function StartPage() {
@@ -48,6 +49,15 @@ export default function StartPage() {
       <button className="btn btn-primary" onClick={handleStart}>
         Start Counting
       </button>
+
+      <div style={{ marginTop: 32, display: "flex", flexDirection: "column", gap: 10 }}>
+        <Link href="/dashboard" className="btn btn-secondary" style={{ textAlign: "center", textDecoration: "none" }}>
+          Live 3D Warehouse Dashboard
+        </Link>
+        <Link href="/count-result" className="btn btn-secondary" style={{ textAlign: "center", textDecoration: "none" }}>
+          Count Result
+        </Link>
+      </div>
     </div>
   );
 }

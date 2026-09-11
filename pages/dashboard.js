@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 
-// Live 3D warehouse dashboard — Frozen zone, Rack FA (first cut; more racks
-// come later, see lib/warehouseLayoutFA.json's header comment). Renders
-// every bin as a cube positioned by its real depth/side/level in the rack,
-// colored by its most recent count status, and polls for updates so it
-// stays "live" while left open on a screen.
+// Live 3D warehouse dashboard — every Bin in the Frozen zone (all 9 racks,
+// FA through FJ). Renders each bin as a cube positioned by its real
+// depth/side/level/rack (see pages/api/dashboard/bins.js + lib/
+// warehouseLayout.json for how the layout is built), colored by its most
+// recent count status, and polls for updates so it stays "live" on screen.
 //
-// Coordinate mapping (see pages/api/dashboard/bins.js for how it's built):
-//   depth (1..54)  -> X — position walking down the aisle
-//   side (L/R)     -> Z — which face of the two-sided rack
-//   level (1..4)   -> Y — shelf height (A/G/H/J)
+// Coordinate mapping:
+//   depth (1..54)    -> X — position walking down the aisle
+//   rackIndex (0..8)  -> Z lane — which of the 9 racks (order confirmed:
+//                        FJ FH FG FF FE FD FC FB FA, right to left)
+//   side (L/R)       -> small Z offset within that rack's lane — which
+//                        face of the two-sided rack
+//   level (1..4)     -> Y — shelf height (A/G/H/J)
+//   FH/FJ's level-1 splits into 6 sub-slots (AA-AF) instead of one "A" —
+//   those get stacked as 6 thinner boxes filling that same level-1 slot.
 
 const STATUS_COLORS = {
   MATCH: 0x22c55e,
@@ -20,9 +25,29 @@ const STATUS_COLORS = {
   UNCOUNTED: 0x9ca3af,
 };
 
-const POLL_MS = 30000;
+const POLL_MS = 60000; // "auto every 1 minute" per request
 const SPACING = 1.15;
 const BOX_SIZE = 0.9;
+const RACK_SPACING = 6; // gap between adjacent racks' Z lanes
+
+function cellPosition(cell) {
+  const x = cell.depth * SPACING;
+  const laneZ = cell.rackIndex * RACK_SPACING;
+  const sideZ = cell.side === "right" ? 1.2 : -1.2;
+  const z = laneZ + sideZ;
+  let y, scaleY;
+  if (cell.totalSub === 6) {
+    // 6 thin slots stacked to fill the same vertical space level 1 would
+    // otherwise take up as a single box.
+    const slotH = SPACING / 6;
+    y = (cell.level - 1) * SPACING + cell.subIndex * slotH + slotH / 2;
+    scaleY = 0.85 / 6;
+  } else {
+    y = (cell.level - 1) * SPACING + 0.5;
+    scaleY = 1;
+  }
+  return { x, y, z, scaleY };
+}
 
 export default function WarehouseDashboard() {
   const mountRef = useRef(null);
@@ -30,8 +55,9 @@ export default function WarehouseDashboard() {
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [error, setError] = useState("");
   const [counts, setCounts] = useState(null); // { total, byStatus }
-  const [hover, setHover] = useState(null); // { bin, status, timestamp, counterName, countedQty }
+  const [hover, setHover] = useState(null); // bin cell + status fields
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ---- three.js scene setup (once) ----
   useEffect(() => {
@@ -50,9 +76,11 @@ export default function WarehouseDashboard() {
         50,
         mount.clientWidth / mount.clientHeight,
         0.1,
-        500
+        1000
       );
-      camera.position.set(35, 25, 55);
+      // Framed for a full laptop-width view of all 9 racks — refined once
+      // real bounds are known, see fitCameraToBins() below.
+      camera.position.set(60, 55, 95);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(mount.clientWidth, mount.clientHeight);
@@ -60,22 +88,14 @@ export default function WarehouseDashboard() {
       mount.appendChild(renderer.domElement);
 
       const controls = new OrbitControls(camera, renderer.domElement);
-      controls.target.set(30, 2.5, 0);
+      controls.target.set(30, 2, 24);
       controls.update();
       controls.enableDamping = true;
 
       scene.add(new THREE.AmbientLight(0xffffff, 0.8));
       const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-      dir.position.set(20, 40, 20);
+      dir.position.set(40, 60, 40);
       scene.add(dir);
-
-      // A thin floor plate + center aisle marker just for spatial orientation.
-      const floorGeo = new THREE.PlaneGeometry(70, 6);
-      const floorMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, side: THREE.DoubleSide });
-      const floor = new THREE.Mesh(floorGeo, floorMat);
-      floor.rotation.x = Math.PI / 2;
-      floor.position.set(30, -0.5, 0);
-      scene.add(floor);
 
       const geometry = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
       const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
@@ -95,6 +115,7 @@ export default function WarehouseDashboard() {
         bins: [],
         raycaster,
         pointer,
+        cameraFitted: false,
       };
 
       function onResize() {
@@ -153,9 +174,9 @@ export default function WarehouseDashboard() {
     let stopped = false;
     let timer;
 
-    async function load() {
+    async function load(forceRefresh) {
       try {
-        const res = await fetch("/api/dashboard/bins?rack=FA");
+        const res = await fetch(`/api/dashboard/bins${forceRefresh ? "?forceRefresh=1" : ""}`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || "Failed to load dashboard data");
         if (stopped) return;
@@ -169,8 +190,28 @@ export default function WarehouseDashboard() {
           setStatus("error");
         }
       } finally {
-        if (!stopped) timer = setTimeout(load, POLL_MS);
+        if (!stopped) timer = setTimeout(() => load(false), POLL_MS);
       }
+    }
+
+    function fitCameraToBins(bins) {
+      const s = stateRef.current;
+      if (s.cameraFitted || !bins.length) return;
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const cell of bins) {
+        const { x, z } = cellPosition(cell);
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      }
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      const span = Math.max(maxX - minX, maxZ - minZ);
+      s.controls.target.set(cx, 2, cz);
+      s.camera.position.set(cx + span * 0.55, span * 0.55, cz + span * 0.75);
+      s.controls.update();
+      s.cameraFitted = true;
     }
 
     function applyBins(bins) {
@@ -185,14 +226,13 @@ export default function WarehouseDashboard() {
         s.mesh = mesh;
       }
       const mesh = s.mesh;
-      const dummy = new s.THREE.Object3D();
-      const color = new s.THREE.Color();
+      const dummy = new THREE.Object3D();
+      const color = new THREE.Color();
 
       bins.forEach((cell, i) => {
-        const x = cell.depth * SPACING;
-        const z = cell.side === "right" ? 1.2 : -1.2;
-        const y = (cell.level - 1) * SPACING + 0.5;
+        const { x, y, z, scaleY } = cellPosition(cell);
         dummy.position.set(x, y, z);
+        dummy.scale.set(1, scaleY, 1);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
         color.setHex(STATUS_COLORS[cell.status] ?? STATUS_COLORS.UNCOUNTED);
@@ -202,6 +242,8 @@ export default function WarehouseDashboard() {
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       s.bins = bins;
 
+      fitCameraToBins(bins);
+
       const byStatus = {};
       for (const b of bins) byStatus[b.status] = (byStatus[b.status] || 0) + 1;
       setCounts({ total: bins.length, byStatus });
@@ -209,12 +251,64 @@ export default function WarehouseDashboard() {
 
     // Give the three.js init effect a moment to set up scene before the
     // first fetch tries to apply data to it.
-    const kickoff = setTimeout(load, 50);
+    const kickoff = setTimeout(() => load(false), 50);
     return () => {
       stopped = true;
       clearTimeout(kickoff);
       clearTimeout(timer);
     };
+  }, []);
+
+  async function handleForceRefresh() {
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/dashboard/bins?forceRefresh=1");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to refresh");
+      // Re-apply through the same path the poller uses, by faking a tiny
+      // wait so the three.js state is definitely mounted.
+      const s = stateRef.current;
+      if (s.THREE && s.scene) {
+        const event = new CustomEvent("dashboard-force-refresh", { detail: json.bins });
+        window.dispatchEvent(event);
+      }
+      setLastUpdated(new Date());
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  // Bridge for the Force Refresh button above, since applyBins is defined
+  // inside the polling effect's closure.
+  useEffect(() => {
+    function handler(e) {
+      const s = stateRef.current;
+      if (!s.THREE || !s.scene || !s.mesh) return;
+      const { THREE } = s;
+      const dummy = new THREE.Object3D();
+      const color = new THREE.Color();
+      const bins = e.detail;
+      bins.forEach((cell, i) => {
+        const { x, y, z, scaleY } = cellPosition(cell);
+        dummy.position.set(x, y, z);
+        dummy.scale.set(1, scaleY, 1);
+        dummy.updateMatrix();
+        s.mesh.setMatrixAt(i, dummy.matrix);
+        color.setHex(STATUS_COLORS[cell.status] ?? STATUS_COLORS.UNCOUNTED);
+        s.mesh.setColorAt(i, color);
+      });
+      s.mesh.instanceMatrix.needsUpdate = true;
+      if (s.mesh.instanceColor) s.mesh.instanceColor.needsUpdate = true;
+      s.bins = bins;
+      const byStatus = {};
+      for (const b of bins) byStatus[b.status] = (byStatus[b.status] || 0) + 1;
+      setCounts({ total: bins.length, byStatus });
+    }
+    window.addEventListener("dashboard-force-refresh", handler);
+    return () => window.removeEventListener("dashboard-force-refresh", handler);
   }, []);
 
   return (
@@ -232,15 +326,31 @@ export default function WarehouseDashboard() {
           background: "rgba(15,23,42,0.85)",
           padding: "10px 14px",
           borderRadius: 8,
-          maxWidth: 260,
+          maxWidth: 280,
         }}
       >
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-          Warehouse Dashboard — Rack FA (Frozen)
+          Live Warehouse Dashboard — Frozen (FA–FJ)
         </div>
         <div style={{ opacity: 0.8, marginBottom: 8 }}>
           Drag to rotate · Scroll to zoom · Right-drag to pan
         </div>
+        <button
+          onClick={handleForceRefresh}
+          disabled={refreshing}
+          style={{
+            background: "#2563eb",
+            color: "white",
+            border: "none",
+            borderRadius: 6,
+            padding: "6px 12px",
+            fontSize: 12,
+            cursor: "pointer",
+            marginBottom: 8,
+          }}
+        >
+          {refreshing ? "Refreshing…" : "⟳ Force Refresh"}
+        </button>
         {status === "error" && <div style={{ color: "#f87171" }}>Error: {error}</div>}
         {counts && (
           <div>
@@ -264,7 +374,7 @@ export default function WarehouseDashboard() {
         )}
         {lastUpdated && (
           <div style={{ opacity: 0.6, marginTop: 8, fontSize: 11 }}>
-            Updated {lastUpdated.toLocaleTimeString("th-TH")} · refreshes every 30s
+            Updated {lastUpdated.toLocaleTimeString("th-TH")} · auto every 1 min
           </div>
         )}
       </div>

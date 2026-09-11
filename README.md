@@ -254,33 +254,62 @@ ever grows a feature that writes data, revisit that call.
 ## 7. Live 3D Warehouse Dashboard (`/dashboard`)
 
 A separate, read-only view for the office — walk-through-the-warehouse-style
-3D map of the Frozen zone (rendered with [three.js](https://threejs.org/),
-mouse/touch to rotate/zoom/pan), colored per bin by its most recent
-`CountRecord` status (`MATCH`/`ADJUSTED`/`ZERO`/`NEW`/`EMPTY`, or grey for
-`UNCOUNTED`). Polls `/api/dashboard/bins` every 30s so it stays current
-while left open on a screen. Hover a cube for its Bin code, status, counted
-qty, who counted it and when.
+3D map of the **entire Frozen zone, all 9 racks** (rendered with
+[three.js](https://threejs.org/), mouse/touch to rotate/zoom/pan/drag),
+colored per bin by its most recent `CountRecord` status
+(`MATCH`/`ADJUSTED`/`ZERO`/`NEW`/`EMPTY`, or grey for `UNCOUNTED`). Polls
+`/api/dashboard/bins` every **60 seconds** so it stays current while left
+open on a screen, plus a manual **⟳ Force Refresh** button for an immediate
+update (bypasses the 1-minute Master/Record cache too). Hover a cube for its
+Bin code, status, counted qty, who counted it, and when. The camera
+auto-frames the whole layout on load, so it fits a normal laptop screen
+without any extra setup.
 
-**Current scope: Rack FA only** (432 bins) — the first cut, built from the
-real bin-location export (`WMS_PRD_binLocation_*.xlsx`) you provided.
-Coordinates come straight from each Bin's code (`FA-<position>-<layer>`):
-position 01–108 alternates right/left side of the two-sided rack (odd =
-right, even = left) walking down the aisle, and layer letter maps to shelf
-level (`A`→1, `G`→2, `H`→3, `J`→4).
+Bin coordinates are precomputed once into `lib/warehouseLayout.json` (a
+static file — not read from Google Sheets — generated from the real
+bin-location export, `WMS_PRD_binLocation_*.xlsx`) and joined against live
+`CountRecord` data by `pages/api/dashboard/bins.js` on every request.
+Layout logic per bin code (`<Aisle>-<Position>-<Layer>`, e.g. `FA-02-A`):
 
-**To add another rack** (FB, FC, … FJ) later:
-1. Re-run the same conversion logic used for `lib/warehouseLayoutFA.json`
-   against that rack's rows in the bin-location export (filter by
-   `aisle_code`, parse `code` as `<aisle>-<position>-<layer>`, compute
-   `depth = ceil(position/2)`, `side = odd?"right":"left"`,
-   `level` from the A/G/H/J→1/2/3/4 map) — send me the export again and
-   I'll generate `lib/warehouseLayout<RACK>.json` the same way.
-2. Register it in `RACK_LAYOUTS` in `pages/api/dashboard/bins.js`.
-3. The dashboard page currently hardcodes `?rack=FA` — once more than one
-   rack exists it'll need a rack picker (not built yet, since this is the
-   single-rack first cut).
+- **Rack** (`FA`–`FJ`, 9 racks) → a Z-axis lane, in the confirmed physical
+  order **FJ FH FG FF FE FD FC FB FA** (right to left, facing into the
+  warehouse).
+- **Position** → depth down the aisle (`depth = ceil(position/2)`) and
+  which of the rack's two faces (`side`: odd = right, even = left).
+- **Layer letter** → shelf level: `A`→1, `G`→2, `H`→3, `J`→4 — except
+  racks **FH and FJ**, whose level-1 shelf is physically split into 6
+  smaller sub-slots (`AA`–`AF` instead of a single `A`); those render as 6
+  thin stacked boxes filling that one level-1 slot rather than one cube.
 
-The rack-to-rack physical order confirmed for the Frozen zone (right to
-left, facing into the warehouse) is **FJ FH FG FF FE FD FC FB FA**; that
-ordering isn't used yet since only FA is wired up, but it's what a later
-multi-rack layout (offsetting each rack's X position) should follow.
+To regenerate `lib/warehouseLayout.json` (e.g. a new bin-location export,
+or a layout change), re-run the same conversion against the new file: parse
+`code`, restrict to the `FA`–`FJ` aisles, compute `depth`/`side`/`level` as
+above, and assign `rackIndex` from the `FJ FH FG FF FE FD FC FB FA` order.
+
+## 8. Count Result (`/count-result`)
+
+A rollup table for the office — **Mat + Batch → Expected / Actual / Diff**,
+deliberately ignoring Bin Location (a material can be expected/counted
+across many bins; this page answers "did we find it all", not "where").
+Backed by `/api/count-result?zone=F|C|D|ALL`:
+
+- **Expected** = sum of `BinMaster` `Qty` for that Mat+Batch (optionally
+  restricted to bins in the selected zone).
+- **Actual** = sum of the **latest** `CountRecord` row per (Bin, Mat,
+  Batch) — so a recounted bin isn't double-counted — for that Mat+Batch
+  (`EMPTY` rows, which have no Mat, are excluded).
+- **Diff** = Actual − Expected.
+
+Filters sit right in the table header: a **zone dropdown** (All / F =
+Frozen / C = Chilled / D = Dry — the zone is just the Bin code's first
+letter, so this works for any zone without needing the 3D layout data), a
+**Mat/Batch/Name search box**, and a **Diff filter** (All / Match (ตรง) /
+Short (ขาด) / Over (เกิน)). Every column header is clickable to sort
+ascending/descending. Same refresh pattern as the Dashboard: auto-refreshes
+every 60 seconds, plus a manual **⟳ Force Refresh** button.
+
+## 9. Navigation
+
+The Start page (`/`) has two buttons below "Start Counting" linking to the
+Dashboard and Count Result pages, for office/desktop use — they're not part
+of the PDA counting flow itself.
