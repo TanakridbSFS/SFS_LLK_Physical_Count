@@ -250,3 +250,37 @@ ever grows a feature that writes data, revisit that call.
   for 1 minute per server instance — if you edit `BinMaster` mid-session,
   changes show up within a minute (or immediately via the admin console's
   "Refresh Master Data Now").
+
+## 7. Live 3D Warehouse Dashboard (`/dashboard`)
+
+A separate, read-only view for the office — walk-through-the-warehouse-style
+3D map of the Frozen zone (rendered with [three.js](https://threejs.org/),
+mouse/touch to rotate/zoom/pan), colored per bin by its most recent
+`CountRecord` status (`MATCH`/`ADJUSTED`/`ZERO`/`NEW`/`EMPTY`, or grey for
+`UNCOUNTED`). Polls `/api/dashboard/bins` every 30s so it stays current
+while left open on a screen. Hover a cube for its Bin code, status, counted
+qty, who counted it and when.
+
+**Current scope: Rack FA only** (432 bins) — the first cut, built from the
+real bin-location export (`WMS_PRD_binLocation_*.xlsx`) you provided.
+Coordinates come straight from each Bin's code (`FA-<position>-<layer>`):
+position 01–108 alternates right/left side of the two-sided rack (odd =
+right, even = left) walking down the aisle, and layer letter maps to shelf
+level (`A`→1, `G`→2, `H`→3, `J`→4).
+
+**To add another rack** (FB, FC, … FJ) later:
+1. Re-run the same conversion logic used for `lib/warehouseLayoutFA.json`
+   against that rack's rows in the bin-location export (filter by
+   `aisle_code`, parse `code` as `<aisle>-<position>-<layer>`, compute
+   `depth = ceil(position/2)`, `side = odd?"right":"left"`,
+   `level` from the A/G/H/J→1/2/3/4 map) — send me the export again and
+   I'll generate `lib/warehouseLayout<RACK>.json` the same way.
+2. Register it in `RACK_LAYOUTS` in `pages/api/dashboard/bins.js`.
+3. The dashboard page currently hardcodes `?rack=FA` — once more than one
+   rack exists it'll need a rack picker (not built yet, since this is the
+   single-rack first cut).
+
+The rack-to-rack physical order confirmed for the Frozen zone (right to
+left, facing into the warehouse) is **FJ FH FG FF FE FD FC FB FA**; that
+ordering isn't used yet since only FA is wired up, but it's what a later
+multi-rack layout (offsetting each rack's X position) should follow.

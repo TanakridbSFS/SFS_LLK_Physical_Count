@@ -64,6 +64,8 @@ export default function AdminConsole() {
       <div className="title">Admin Console</div>
       <div className="banner banner-info">
         For office use — not needed on the PDA. <Link href="/scan">Go to counting app →</Link>
+        {" · "}
+        <Link href="/dashboard">Live 3D Warehouse Dashboard →</Link>
       </div>
 
       <div className="card">
